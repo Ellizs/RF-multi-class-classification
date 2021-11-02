@@ -1,0 +1,60 @@
+''' Import libraries '''
+import numpy as np
+import pandas as pd
+
+def get_dupli_rows(df):
+
+    '''This function returns the number of duplicate rows
+    in a Panda's dataframe.'''
+
+    # Group indices of the duplicate rows
+    df_duplicates = df.groupby(df.columns.tolist()).apply(lambda x: tuple(x.index)).tolist()
+
+    # Determine the number of duplicate rows
+    nr_dupli_rows = len(df_duplicates)
+    return nr_dupli_rows
+
+def plot_confusion_matrix(confusion_matrix, labels, normalize=True):
+
+    '''
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    '''
+
+    if normalize:
+        confusion_matrix = confusion_matrix.astype('float') / confusion_matrix.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+    sns.set(font_scale=1)
+    sns.set_style("white")
+    ax = sns.heatmap(confusion_matrix, cmap=cmap, annot=True, annot_kws={"size" : 24}, fmt=".2f", vmin = 0.0, vmax=1.0, cbar_kws={"ticks" : [0, 0.2, 0.4, 0.6, 0.8, 1.0]})
+    for _, spine in ax.spines.items():
+        spine.set_visible(True)
+    ax.set_xticklabels(labels, fontdict=font_labels)
+    ax.set_yticklabels(labels, fontdict=font_labels, rotation=0)
+    ax.tick_params(axis='both', length=0)
+    plt.ylabel('True label', fontdict=font_labels)
+    plt.xlabel('Predicted label', fontdict=font_labels, labelpad=10)
+    plt.show()
+    
+def sort_feature_importance(feature_names, importance_scores):
+
+    '''This function returns:
+    - The descending sorting indices of feature importance scores
+    - The rearranged feature names (high --> low importance score)
+    - A dataframe containing both the importance scores and corresponding feature names in descending order
+    '''
+
+    # Determine the descending sorting indices for the importance values
+    indices = np.argsort(importance_scores)[::-1]
+
+    # Rearrange the feature names (high to low importance) so they match the importance values
+    rearranged_feature_names = [feature_names[i] for i in indices]
+
+    # Create dataframe containing the importance scores and corresponding feature names
+    df_feature_importance = pd.DataFrame(importance_scores,
+                                       index=feature_names,
+                                       columns=['importance']).sort_values('importance', ascending=False)
+
+    return indices, rearranged_feature_names, df_feature_importance
