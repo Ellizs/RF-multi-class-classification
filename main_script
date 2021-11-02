@@ -1,0 +1,127 @@
+
+''' Import Libraries '''
+
+import pandas as pd
+import numpy as np
+import sys
+import seaborn as sns
+import random
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from collections import Counter
+from sklearn.model_selection import train_test_split, cross_validate
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn import metrics
+from separate_functions import get_dupli_rows, plot_confusion_matrix, sort_feature_importance
+
+# set print options
+np.set_printoptions(threshold=sys.maxsize)
+
+''' Import Dataset '''
+
+dataset = pd.read_excel('/Users/ellizscheijbeler/Documents/Promotie/04. Papers/01 Diagnostic Profiles of Dementia/Neurobiology of aging/FINAL_all_features_non_corrected.xlsx', header=0)
+
+''' Prepare Dataset '''
+
+# Define features
+features = list(dataset.columns[1:157].values)
+
+# Define independent variables
+X = pd.DataFrame(dataset.iloc[:,1:157].values, columns = features)
+
+# Define dependent variables
+y = pd.Series(dataset.iloc[:,0].values)
+
+# Split into a training and test set (9:1 ratio)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=0)
+
+# Summarize the imbalanced class distribution
+print('Imbalanced distribution: ', Counter(y_train))
+
+# Define the random under sampling strategy (i.e. all but the minority class)
+undersample = RandomUnderSampler(sampling_strategy='not minority', random_state=1, replacement=False)
+
+# Fit and apply the transform
+X_undersampled, y_undersampled = undersample.fit_resample(X_train, y_train)
+
+# Summarize the new (balanced) class distribution
+print('Balanced distribution: ', Counter(y_undersampled))
+
+# Concatenate the training and undersampled data instances
+Xtrain_undersampled = pd.concat([X_train, X_undersampled])
+
+# Change display settings to print all rows of the dataframe
+pd.set_option('display.max_rows', Xtrain_undersampled.shape[0]+1)
+
+# Create dataframe with the duplicate rows in Xtrain_undersampled
+df_duplicates = Xtrain_undersampled[Xtrain_undersampled.duplicated(keep=False)]
+
+# Get the number of duplicate rows
+nr_dupli_rows = get_dupli_rows(df_duplicates)
+
+# Get the indices of the rows in the initial dataset that were undersampled
+rus_idx = list(df_duplicates.index[0:nr_dupli_rows])
+
+# Remove the undersampled samples from the training set
+X_not_undersampled = X_train.drop(rus_idx)
+y_not_undersampled = y_train.drop(rus_idx)
+
+# Add the not undersampled samples to the test set
+X_test = pd.concat([X_test, X_not_undersampled])
+y_test = pd.concat([y_test, y_not_undersampled])
+
+
+''' Apply the RF model '''
+
+# Initiate classifier
+clf = RandomForestClassifier(n_estimators=500, random_state=1)
+
+# Fit classifier to the undersampled training data
+clf.fit(X_undersampled, y_undersampled)
+
+# Predict class labels of the test set
+predictions = clf.predict(X_test)
+
+# Calculate balanced accuracy score
+print("Balanced accuracy:\n", metrics.balanced_accuracy_score(y_test, predictions))
+
+# Calculate precision scores
+print("Precision:\n", metrics.precision_score(y_test, predictions, average=None))
+
+# Recover the mapping of the classifier (i.e., ['AD', 'DLB', 'FTD', 'MCI', 'Psy', 'SCD'])
+print(clf.classes_)
+
+# Plot confusion matrix
+labels = ['SCD', 'MCI', 'AD', 'DLB', 'FTD', 'Psy']
+conf_mat = confusion_matrix(y_test, predictions, labels=labels)
+plot_confusion_matrix(conf_mat, labels)
+
+# Predict probabilistic diagnostic profiles for the test set
+probabilities = clf.predict_proba(X_test)
+
+# Export the diagnostic profiles of correctly classified subjects to separate Excel files 
+profile_list = []
+for i in range(len(y_test)):
+    if y_test.values[i] == predictions[i]:
+         if y_test.values[i] == 'SCD': # Change to correct diagnostic group
+             profile_list.append(probabilities[i])
+
+df = pd.DataFrame(profile_list, columns=['AD', 'DLB', 'FTD', 'MCI', 'Psy', 'SCD'])
+df.to_excel("/Users/ellizscheijbeler/Documents/Promotie/04. Papers/01 Diagnostic Profiles of Dementia/Neurobiology of aging/correct_profiles_SCD_2021.xlsx")
+
+# Calculate the MAUC
+print("MAUC:\n", roc_auc_score(y_test, probabilities, multi_class='ovo', average='macro'))
+
+# Find feature importance scores for classification
+importances = clf.feature_importances_
+
+# Sort features based on their feature importance score
+indices, rearranged_feature_names, df_feature_importance = feature_importance(features, importances)
+
+# Export to Excel file
+df2 = pd.DataFrame(df_feature_importance[0:156], columns=['Feature Names', 'importance'])
+df2.to_excel("/Users/ellizscheijbeler/Documents/Promotie/04. Papers/01 Diagnostic Profiles of Dementia/Neurobiology of aging/feature_importances.xlsx")
+
+# Print the most important features and their importance score
+print("Features sorted by their summed importance score:\n", df_feature_importance[0:156])
