@@ -1,0 +1,60 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.datasets import make_classification
+from sklearn.model_selection import cross_val_score, cross_val_predict, cross_validate, LeaveOneOut
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline, Pipeline
+import sklearn.metrics
+
+dataset = pd.read_excel('/Users/ellizscheijbeler/Downloads/MEG_MST_Th_LF_Diam_global_140222-3.xlsx', header=0)
+
+feature_names = list(dataset.columns[1:43].values)
+
+#  Define independent variables (X)
+X = pd.DataFrame(dataset.iloc[:,1:43].values, columns = feature_names)
+
+# Define dependent variables (y)
+y = pd.Series(dataset.iloc[:,0].values)
+
+rfc = RandomForestClassifier(n_estimators=500, random_state=1)
+
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
+
+for train, test in skf.split(X, y):
+     print("TRAIN:", train, "TEST:", test)
+
+# make pipeline: scaling falls within the cross-validation loop
+pipeline = make_pipeline(StandardScaler(), rfc)
+
+output = cross_validate(pipeline, X, y, cv=skf, scoring =('precision_weighted', 'balanced_accuracy'), return_estimator=True)
+print("Balanced accuracy: %0.2f (+/- %0.2f)" % (output['test_balanced_accuracy'].mean(), output['test_balanced_accuracy'].std() * 2))
+print("Weighted precision: %0.2f (+/- %0.2f)" % (output['test_precision_weighted'].mean(), output['test_precision_weighted'].std() * 2))
+
+count = 1
+
+for idx, estimator in enumerate(output['estimator']):
+    print("Features sorted by their score for estimator {}:".format(idx))
+    feature_importances = pd.DataFrame(estimator.steps[1][1].feature_importances_,
+                                       index = feature_names,
+                                        columns=['importance']).sort_values('importance', ascending=False)
+    print(feature_importances)
+
+    # plot in descending order
+    importances_index_desc = np.argsort(estimator.steps[1][1].feature_importances_)[::-1]
+    feature_labels = [feature_names[i] for i in importances_index_desc]
+    plt.figure()
+    plt.bar(feature_labels, estimator.steps[1][1].feature_importances_[importances_index_desc])
+    plt.xticks(feature_labels, rotation='vertical')
+    plt.ylabel('Importance')
+    plt.xlabel('Features')
+    plt.title('Fold {}'.format(count))
+    count = count + 1
+
+plt.show()
+# Generate cross-validated estimates for each input data point.
+# The data is split according to the cv parameter. Each sample belongs to exactly one test set,
+# and its prediction is computed with an estimator fitted on the corresponding training set.
+y_proba = cross_val_predict(pipeline, X, y, cv=skf, method='predict_proba')
