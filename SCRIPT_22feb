@@ -1,0 +1,118 @@
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.metrics import make_scorer
+from sklearn.metrics import roc_auc_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.datasets import make_classification
+from sklearn.model_selection import cross_val_score, cross_val_predict, cross_validate
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.metrics import confusion_matrix
+from palettable.lightbartlein.sequential import Blues7_2
+cmap = Blues7_2.mpl_colormap
+font_labels = {'name' : 'Arial',
+               'size' : '24'}
+
+dataset = pd.read_excel('/Users/ellizscheijbeler/Documents/Promotie/Rosanna - RF/MEG_MST_Th_LF_Diam_global_BL_FU_220222.xlsx', header=0)
+# Set to 55 for MST
+# Set to 37 for MST NO DELTA
+# Set to 64 for MST + KLIN
+# Set to 43 for MST + KLIN NO DELTA
+
+feature_names = list(dataset.columns[1:37].values)
+print(feature_names)
+#  Define independent variables (X)
+X = pd.DataFrame(dataset.iloc[:,1:37].values, columns = feature_names)
+
+# Define dependent variables (y)
+y = pd.Series(dataset.iloc[:,0].values)
+
+rfc = RandomForestClassifier(n_estimators=500, random_state=1)
+
+#This cross-validation object is a variation of KFold that returns stratified folds.
+#The folds are made by preserving the percentage of samples for each class.
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)
+
+# for train, test in skf.split(X, y):
+#     print("TRAIN:", train, "TEST:", test)
+
+# make pipeline: scaling falls within the cross-validation loop
+pipeline = make_pipeline(StandardScaler(), rfc)
+
+scoring = {'balanced_accuracy': 'balanced_accuracy', 'precision_weighted': 'precision_weighted', 'auc_weighted': make_scorer(roc_auc_score, average='weighted', multi_class='ovo', needs_proba=True)}
+
+output = cross_validate(pipeline, X, y, cv=skf, scoring=scoring, return_estimator=True)
+
+print("Balanced accuracy: %0.2f (+/- %0.2f)" % (output['test_balanced_accuracy'].mean(), output['test_balanced_accuracy'].std() * 2))
+print("Weighted precision: %0.2f (+/- %0.2f)" % (output['test_precision_weighted'].mean(), output['test_precision_weighted'].std() * 2))
+print("Multiclass AUC: %0.2f (+/- %0.2f)" % (output['test_auc_weighted'].mean(), output['test_auc_weighted'].std() * 2))
+count = 1
+
+for idx, estimator in enumerate(output['estimator']):
+    print("Features sorted by their score for estimator {}:".format(idx))
+    feature_importances = pd.DataFrame(estimator.steps[1][1].feature_importances_,
+                                       index = feature_names,
+                                        columns=['importance']).sort_values('importance', ascending=False)
+    print(feature_importances)
+
+    # plot in descending order
+    importances_index_desc = np.argsort(estimator.steps[1][1].feature_importances_)[::-1]
+    feature_labels = [feature_names[i] for i in importances_index_desc]
+    plt.figure()
+    plt.bar(feature_labels, estimator.steps[1][1].feature_importances_[importances_index_desc])
+    plt.xticks(feature_labels, rotation='vertical')
+    plt.ylabel('Importance')
+    plt.xlabel('Features')
+    plt.title('Fold {}'.format(count))
+    count = count + 1
+
+plt.show()
+# Generate cross-validated estimates for each input data point.
+# The data is split according to the cv parameter. Each sample belongs to exactly one test set,
+# # and its prediction is computed with an estimator fitted on the corresponding training set.
+# # print(y)
+# y_proba = cross_val_predict(pipeline, X, y, cv=skf, method='predict_proba')
+# y_proba = cross_val_predict(pipeline, X, y, cv=skf)
+
+# labels= [0, 1, 4]
+# conf_mat = confusion_matrix(y, y_proba, labels=labels)
+
+# def plot_confusion_matrix(confusion_matrix, labels, normalize=True):
+#
+#     '''
+#     This function prints and plots the confusion matrix.
+#     Normalization can be applied by setting `normalize=True`.
+#     '''
+#
+#     if normalize:
+#         confusion_matrix = confusion_matrix.astype('float') / confusion_matrix.sum(axis=1)[:, np.newaxis]
+#         print("Normalized confusion matrix")
+#     else:
+#         print('Confusion matrix, without normalization')
+#     sns.set(font_scale=1)
+#     sns.set_style("white")
+#     ax = sns.heatmap(confusion_matrix, cmap=cmap, annot=True, annot_kws={"size" : 24}, fmt=".2f", vmin = 0.0, vmax=1.0, cbar_kws={"ticks" : [0, 0.2, 0.4, 0.6, 0.8, 1.0]})
+#     for _, spine in ax.spines.items():
+#         spine.set_visible(True)
+#     ax.set_xticklabels(labels, fontdict=font_labels)
+#     ax.set_yticklabels(labels, fontdict=font_labels, rotation=0)
+#     ax.tick_params(axis='both', length=0)
+#     plt.ylabel('True label', fontdict=font_labels)
+#     plt.xlabel('Predicted label', fontdict=font_labels, labelpad=10)
+#     # plt.title('Four-Class Classification', fontdict=font_title)
+#     plt.show()
+#
+# plot_confusion_matrix(conf_mat, ['ALS', 'ALS-FTS', 'bvFTD'])
+
+# What happens during scaling in a pipeline can be described as follows:
+
+# Step 0: The data are split into TRAINING data and TEST data according to the cv parameter that you specified in the GridSearchCV.
+# Step 1: the scaler is fitted on the TRAINING data
+# Step 2: the scaler transforms TRAINING data
+# Step 3: the models are fitted/trained using the transformed TRAINING data
+# Step 4: the scaler is used to transform the TEST data
+# Step 5: the trained models predict using the transformed TEST data
+#--> gecheckt, werkt.
